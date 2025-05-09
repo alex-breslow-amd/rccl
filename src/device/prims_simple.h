@@ -64,6 +64,7 @@ class Primitives<
   uint64_t* barriers;
   uint64_t barrier_next = 0;
   int repeat;
+  bool oneNode = false;
 
 #if defined(ENABLE_NPKIT)
 public:
@@ -215,6 +216,8 @@ private:
     nelem = nelem < 0 ? 0 : nelem;
     int sliceSize = stepSize*StepPerSlice;
     sliceSize = max(divUp(nelem, 16*SlicePerChunk)*16, sliceSize/32);
+    if(oneNode) {sliceSize = nelem;}
+
     int slice = 0;
     int offset = 0;
 
@@ -838,6 +841,7 @@ public:
     // coverity[var_deref_model] => coverity thinks work can dereferenced if NULL but this is not the case
     setDataPtrs(inputBuf, outputBuf, redOpArg, (struct ncclDevWorkCollReg*)collWork, sendIpcReg || recvIpcReg, peer);
     // coverity[uninit_member] => coverity thinks fan.n is not initialized
+    oneNode = collWork -> oneNode;
   }
 
   __forceinline__ __device__ ~Primitives() {
