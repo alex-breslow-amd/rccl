@@ -32,6 +32,7 @@ option(ENABLE_IFC                              "Enable indirect function call"  
 option(INSTALL_DEPENDENCIES                    "Force install dependencies"                    OFF)
 option(ROCTX                                   "Enable ROCTX"                                  ON)
 option(PROFILE                                 "Enable profiling"                              OFF)
+option(SAVE_TEMPS                              "Save temporary files from compilation"         OFF)
 option(TIMETRACE                               "Enable time-trace during compilation"          OFF)
 option(TRACE                                   "Enable additional tracing"                     OFF)
 option(FAULT_INJECTION                         "Enable fault injection"                        ON)
@@ -827,6 +828,10 @@ target_compile_options(rccl PRIVATE -fgpu-rdc)               # Generate relocata
 target_compile_options(rccl PRIVATE -fvisibility=hidden)     # Set symbol visibility to hidden by default
 if (HAVE_KERNARG_PRELOAD)
   target_compile_options(rccl PRIVATE -mllvm --amdgpu-kernarg-preload-count=16)
+endif()
+if (SAVE_TEMPS) # Save temporary files from kernel compilation
+  message(STATUS "Saving temporary files from kernel compilation")
+  target_compile_options(rccl PRIVATE --save-temps)
 endif()
 
 ## NOTE: This is currently being handled by rocm-cmake, however may need to be re-enabled in the future

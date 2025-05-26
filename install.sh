@@ -33,6 +33,7 @@ openmp_test_enabled=false
 roctx_enabled=true
 run_tests=false
 run_tests_all=false
+save_temps=false
 time_trace=false
 
 # #################################################
@@ -66,6 +67,7 @@ function display_help()
     echo "       --rm-legacy-include-dir Remove legacy include dir Packaging added for file/folder reorg backward compatibility"
     echo "       --run_tests_all         Run all rccl unit tests (must be built already)"
     echo "    -r|--run_tests_quick       Run small subset of rccl unit tests (must be built already)"
+    echo "       --save-temps            Save intermediate compilation files from GPU compilation (useful for debugging)"
     echo "       --static                Build RCCL as a static library instead of shared library"
     echo "    -t|--tests_build           Build rccl unit tests, but do not run"
     echo "       --time-trace            Plot the build time of RCCL (requires \`ninja-build\` package installed on the system)"
@@ -79,7 +81,7 @@ function display_help()
 # check if we have a modern version of getopt that can handle whitespace and long parameters
 getopt -T
 if [[ "$?" -eq 4 ]]; then
-    GETOPT_PARSE=$(getopt --name "${0}" --options dfhij:lprt --longoptions address-sanitizer,dependencies,debug,enable_backtrace,disable-colltrace,disable-msccl-kernel,disable-mscclpp,enable-mscclpp-clip,fast,help,install,jobs:,local_gpu_only,amdgpu_targets:,no_clean,npkit-enable,log-trace,openmp-test-enable,roctx-enable,package_build,prefix:,rm-legacy-include-dir,run_tests_all,run_tests_quick,static,tests_build,time-trace,verbose -- "$@")
+    GETOPT_PARSE=$(getopt --name "${0}" --options dfhij:lprt --longoptions address-sanitizer,dependencies,debug,enable_backtrace,disable-colltrace,disable-msccl-kernel,disable-mscclpp,enable-mscclpp-clip,fast,help,install,jobs:,local_gpu_only,amdgpu_targets:,no_clean,npkit-enable,log-trace,openmp-test-enable,roctx-enable,package_build,prefix:,rm-legacy-include-dir,run_tests_all,run_tests_quick,save-temps,static,tests_build,time-trace,verbose -- "$@")
 else
     echo "Need a new version of getopt"
     exit 1
@@ -118,6 +120,7 @@ while true; do
          --rm-legacy-include-dir)    build_freorg_bkwdcomp=false;                                                                      shift ;;
     -r | --run_tests_quick)          run_tests=true;                                                                                   shift ;;
          --run_tests_all)            run_tests=true; run_tests_all=true;                                                               shift ;;
+         --save-temps)               save_temps=true;                                                                                  shift ;;
          --static)                   build_static=true;                                                                                shift ;;
     -t | --tests_build)              build_tests=true;                                                                                 shift ;;
          --time-trace)               time_trace=true;                                                                                  shift ;;
@@ -269,6 +272,11 @@ fi
 # Disable ROCTX
 if [[ "${roctx_enabled}" == false ]]; then
     cmake_common_options="${cmake_common_options} -DROCTX=OFF"
+fi
+
+# Enable saving intermediate compilation files from GPU compilation
+if [[ "${save_temps}" == true ]]; then
+    cmake_common_options="${cmake_common_options} -DSAVE_TEMPS=ON"
 fi
 
 # Enable OpenMP in unit tests
