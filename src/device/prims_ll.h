@@ -394,8 +394,8 @@ private:
       // Yes, for some template arguments this code will be unreachable.  That's fine.
       // coverity[dead_error_line]
       if (i==0 || i < eltN)
-        //store(dst+i, elt[i]);
-        dst[i] = elt[i];
+        store(dst+i, elt[i]);
+        //dst[i] = elt[i];
     }
   }
 
