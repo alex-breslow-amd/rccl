@@ -189,9 +189,8 @@ private:
   inline __device__ void postPeer(bool dataStored) {
     if (Send && (flags & RolePostSend) && dataStored)
 #ifdef __GFX9__
-    //__threadfence();
-    atomic_thread_fence(memory_order_acquire, thread_scope_block);
-    __builtin_amdgcn_s_waitcnt(0);
+    __threadfence_block();
+    //__builtin_amdgcn_s_waitcnt(0);
 #else
     __threadfence_system();
 #endif
