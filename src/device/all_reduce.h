@@ -93,7 +93,6 @@ namespace {
         prims.npKitDataProcessTotalTime = 0;
       }
 #endif
-
       prims.directSend(offset, offset, nelem);
 
 #if defined(ENABLE_NPKIT) && defined(ENABLE_NPKIT_EVENT_ALL_REDUCE_RING_SEND_EXIT)
@@ -112,7 +111,6 @@ namespace {
         prims.npKitDataProcessTotalTime = 0;
       }
 #endif
-
       for (int j = 2; j < nranks; ++j) {
         chunk = modRanks(ringIx + nranks - j);
         chunkOffset = chunk * chunkCount;
@@ -207,7 +205,6 @@ namespace {
           ncclShmem.comm.npKitEventCollectContexts + npKitCtxIdx);
     }
 #endif
-
   }
 
   template<typename T, typename RedOp, typename Proto>
