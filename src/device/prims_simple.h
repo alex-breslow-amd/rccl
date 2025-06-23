@@ -191,16 +191,20 @@ private:
     }
   }
 
-  template<int Recv, int Send, bool l2Fence>
+  template<int Recv, int Send, int L2Fence>
   inline __device__ void postPeer(bool dataStored) {
     if (Send && (flags & RolePostSend) && dataStored)
 #ifdef __GFX9__
-    if(l2Fence){
+  #ifdef __gfx942__
+    if(L2Fence){
       __threadfence();
     }
     else{
     __threadfence_block();
     }
+  #else
+  __threadfence();
+  #endif
 #else
     __threadfence_system();
 #endif
@@ -214,7 +218,7 @@ private:
     }
   }
 
-  template <int DirectRecv1, int DirectSend1, int Recv, int Send, int SrcBuf, int DstBuf, bool l2Fence = true>
+  template <int DirectRecv1, int DirectSend1, int Recv, int Send, int SrcBuf, int DstBuf, int L2Fence = true>
   __device__ __forceinline__ void genericOp(
       intptr_t srcIx, intptr_t dstIx, int nelem, bool postOp
     ) {
@@ -405,7 +409,7 @@ private:
           workSize = 0;
         }
         barrier(); // This barrier has a counterpart in following loop
-        postPeer<Recv, Send, l2Fence>(0 < workSize);
+        postPeer<Recv, Send, L2Fence>(0 < workSize);
         offset += sliceSize;
         slice += 1;
         // Yes, for some template arguments this code will be unreachable.  That's fine.
@@ -426,7 +430,7 @@ private:
       }
       barrier(); // Has couterpart in preceding worker-only loop.
       int workSize = ncclShmem.aborted ? 0 : sliceSize;
-      postPeer<Recv, Send, l2Fence>(0 < workSize);
+      postPeer<Recv, Send, L2Fence>(0 < workSize);
       offset += sliceSize;
       slice += 1;
     }
@@ -580,7 +584,7 @@ private:
   // Scatter/Gather generic op
   // skip: my own rank order in the buffer chunks
   // shift: peer offset to avoid all ranks sending to or receiving from same peer
-  template <int DirectRecv1, int DirectSend1, int Recv, int Send, bool l2Fence>
+  template <int DirectRecv1, int DirectSend1, int Recv, int Send, bool L2Fence>
   __device__ __forceinline__ void
   ScatterGatherOp(intptr_t inpIx, intptr_t outIx, ssize_t totalElem, int peerElem, ssize_t peerOffset, int skip, int shift, bool postOp) {
     constexpr int DirectRecv = /*1 &&*/ Direct && DirectRecv1;
@@ -636,7 +640,7 @@ private:
         }
       }
       fenceNeeded = __any(fenceNeeded);
-      postPeer<Recv, Send, l2Fence>(fenceNeeded);
+      postPeer<Recv, Send, L2Fence>(fenceNeeded);
       offset += realSize;
     }
   }
@@ -1026,80 +1030,80 @@ public:
   }
 
   __device__ __forceinline__ void send(intptr_t inpIx, int eltN) {
-    genericOp<0, 0, 0, 1, Input, -1, true>(inpIx, -1, eltN, false);
+    genericOp<0, 0, 0, 1, Input, -1, 1>(inpIx, -1, eltN, false);
   }
   __device__ __forceinline__ void sendFromOutput(intptr_t outIx, int eltN) {
-    genericOp<0, 0, 0, 1, Output, -1, true>(outIx, -1, eltN, false);
+    genericOp<0, 0, 0, 1, Output, -1, 1>(outIx, -1, eltN, false);
   }
   __device__ __forceinline__ void directSend(intptr_t inpIx, intptr_t outIx, int eltN) {
-    genericOp<0, 1, 0, 1, Input, -1, true>(inpIx, outIx, eltN, false);
+    genericOp<0, 1, 0, 1, Input, -1, 1>(inpIx, outIx, eltN, false);
   }
   __device__ __forceinline__ void directSendFromOutput(intptr_t outIx, int eltN) {
-    genericOp<0, 1, 0, 1, Output, -1, true>(outIx, outIx, eltN, false);
+    genericOp<0, 1, 0, 1, Output, -1, 1>(outIx, outIx, eltN, false);
   }
 
   __device__ __forceinline__ void recv(intptr_t outIx, int eltN, bool postOp=false) {
-    genericOp<0, 0, 1, 0, -1, Output, true>(-1, outIx, eltN, postOp);
+    genericOp<0, 0, 1, 0, -1, Output, 1>(-1, outIx, eltN, postOp);
   }
   __device__ __forceinline__ void directRecv(intptr_t outIx, int eltN, bool postOp=false) {
-    genericOp<1, 0, 1, 0, -1, Output, true>(outIx, outIx, eltN, postOp);
+    genericOp<1, 0, 1, 0, -1, Output, 0>(outIx, outIx, eltN, postOp);
   }
   __device__ __forceinline__ void directRecvCopy(intptr_t inpIx, intptr_t outIx, int eltN) {
-    genericOp<1, 0, 1, 0, -1, Output, true>(inpIx, outIx, eltN, /*postOp=*/false);
+    genericOp<1, 0, 1, 0, -1, Output, 1>(inpIx, outIx, eltN, /*postOp=*/false);
   }
 
   __device__ __forceinline__ void copySend(intptr_t inpIx, intptr_t outIx, int eltN, bool postOp=false) {
-    genericOp<0, 0, 0, 1, Input, Output, true>(inpIx, outIx, eltN, postOp);
+    genericOp<0, 0, 0, 1, Input, Output, 0>(inpIx, outIx, eltN, postOp);
   }
   __device__ __forceinline__ void directCopySend(intptr_t inpIx, intptr_t outIx, int eltN, bool postOp=false) {
-    genericOp<0, 1, 0, 1, Input, Output, true>(inpIx, outIx, eltN, postOp);
+    genericOp<0, 1, 0, 1, Input, Output, 1>(inpIx, outIx, eltN, postOp);
   }
 
   __device__ __forceinline__ void recvSend(int eltN, bool postOp=false) {
-    genericOp<0, 0, 1, 1, -1, -1, true>(-1, -1, eltN, postOp);
+    genericOp<0, 0, 1, 1, -1, -1, 1>(-1, -1, eltN, postOp);
   }
   __device__ __forceinline__ void recvCopySend(intptr_t outIx, int eltN, bool postOp=false) {
-    genericOp<0, 0, 1, 1, -1, Output, true>(-1, outIx, eltN, postOp);
+    genericOp<0, 0, 1, 1, -1, Output, 1>(-1, outIx, eltN, postOp);
   }
   __device__ __forceinline__ void directRecvCopyDirectSend(intptr_t inpIx, intptr_t outIx, int eltN, bool postOp=false) {
-    genericOp<1, 1, 1, 1, -1, Output, true>(inpIx, outIx, eltN, postOp);
+    genericOp<1, 1, 1, 1, -1, Output, 1>(inpIx, outIx, eltN, postOp);
   }
   __device__ __forceinline__ void directRecvDirectSend(intptr_t inpIx, intptr_t outIx, int eltN, bool postOp=false) {
-    genericOp<1, 1, 1, 1, -1, -1, true>(inpIx, outIx, eltN, postOp);
+    genericOp<1, 1, 1, 1, -1, -1, 1>(inpIx, outIx, eltN, postOp);
   }
   __device__ __forceinline__ void recvCopyDirectSend(intptr_t outIx, int eltN, bool postOp=false) {
-    genericOp<0, 1, 1, 1, -1, Output, true>(-1, outIx, eltN, postOp);
+    genericOp<0, 1, 1, 1, -1, Output, 1>(-1, outIx, eltN, postOp);
   }
 
   __device__ __forceinline__ void recvReduceCopy(intptr_t inpIx, intptr_t outIx, int eltN, bool postOp=false) {
-    genericOp<0, 0, 1, 0, Input, Output, true>(inpIx, outIx, eltN, postOp);
+    genericOp<0, 0, 1, 0, Input, Output, 1>(inpIx, outIx, eltN, postOp);
   }
   __device__ __forceinline__ void directRecvReduceCopy(intptr_t inpIx, intptr_t outIx, int eltN, bool postOp=false) {
-    genericOp<1, 0, 1, 0, Input, Output, true>(inpIx, outIx, eltN, postOp);
+    genericOp<1, 0, 1, 0, Input, Output, 1>(inpIx, outIx, eltN, postOp);
   }
 
   __device__ __forceinline__ void recvReduceSend(intptr_t inpIx, int eltN, bool postOp=false) {
-    genericOp<0, 0, 1, 1, Input, -1, true>(inpIx, -1, eltN, postOp);
+    genericOp<0, 0, 1, 1, Input, -1, 1>(inpIx, -1, eltN, postOp);
   }
   __device__ __forceinline__ void directRecvReduceSend(intptr_t inpIx, int eltN, bool postOp=false) {
-    genericOp<1, 0, 1, 1, Input, -1, true>(inpIx, -1, eltN, postOp);
+    genericOp<1, 0, 1, 1, Input, -1, 1>(inpIx, -1, eltN, postOp);
   }
   __device__ __forceinline__ void recvReduceDirectSend(intptr_t inpIx, intptr_t outIx, int eltN, bool postOp=false) {
-    genericOp<0, 1, 1, 1, Input, -1, true>(inpIx, outIx, eltN, postOp);
+    genericOp<0, 1, 1, 1, Input, -1, 1>(inpIx, outIx, eltN, postOp);
   }
   __device__ __forceinline__ void directRecvReduceDirectSend(intptr_t inpIx, intptr_t outIx, ssize_t eltN, bool postOp=false) {
-    genericOp<1, 1, 1, 1, Input, -1, false>(inpIx, outIx, eltN, postOp);
+    genericOp<1, 1, 1, 1, Input, -1, 0>(inpIx, outIx, eltN, postOp);
   }
 
   __device__ __forceinline__ void recvReduceCopySend(intptr_t inpIx, intptr_t outIx, int eltN, bool postOp=false) {
-    genericOp<0, 0, 1, 1, Input, Output, true>(inpIx, outIx, eltN, postOp);
+    genericOp<0, 0, 1, 1, Input, Output, 1>(inpIx, outIx, eltN, postOp);
   }
   __device__ __forceinline__ void recvReduceCopyDirectSend(intptr_t inpIx, intptr_t outIx, int eltN, bool postOp=false) {
     // Direct is only for the send part
-    genericOp<0, 1, 1, 1, Input, Output, true>(inpIx, outIx, eltN, postOp);
+    genericOp<0, 1, 1, 1, Input, Output, 1>(inpIx, outIx, eltN, postOp);
   }
   __device__ __forceinline__ void directRecvReduceCopyDirectSend(intptr_t inpIx, intptr_t outIx, ssize_t eltN, bool postOp=false) {
-    genericOp<1, 1, 1, 1, Input, Output, true>(inpIx, outIx, eltN, postOp);
+    genericOp<1, 1, 1, 1, Input, Output, 1>(inpIx, outIx, eltN, postOp);
   }
 
   __device__ __forceinline__ void
