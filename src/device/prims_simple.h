@@ -200,6 +200,7 @@ private:
       __threadfence();
     }
     else{
+    asm volatile("s_waitcnt lgkmcnt(0) vmcnt(0)");
     __threadfence_block();
     }
   #else
@@ -1046,14 +1047,14 @@ public:
     genericOp<0, 0, 1, 0, -1, Output, 1>(-1, outIx, eltN, postOp);
   }
   __device__ __forceinline__ void directRecv(intptr_t outIx, int eltN, bool postOp=false) {
-    genericOp<1, 0, 1, 0, -1, Output, 0>(outIx, outIx, eltN, postOp);
+    genericOp<1, 0, 1, 0, -1, Output, 1>(outIx, outIx, eltN, postOp);
   }
   __device__ __forceinline__ void directRecvCopy(intptr_t inpIx, intptr_t outIx, int eltN) {
     genericOp<1, 0, 1, 0, -1, Output, 1>(inpIx, outIx, eltN, /*postOp=*/false);
   }
 
   __device__ __forceinline__ void copySend(intptr_t inpIx, intptr_t outIx, int eltN, bool postOp=false) {
-    genericOp<0, 0, 0, 1, Input, Output, 0>(inpIx, outIx, eltN, postOp);
+    genericOp<0, 0, 0, 1, Input, Output, 1>(inpIx, outIx, eltN, postOp);
   }
   __device__ __forceinline__ void directCopySend(intptr_t inpIx, intptr_t outIx, int eltN, bool postOp=false) {
     genericOp<0, 1, 0, 1, Input, Output, 1>(inpIx, outIx, eltN, postOp);
@@ -1092,7 +1093,7 @@ public:
     genericOp<0, 1, 1, 1, Input, -1, 1>(inpIx, outIx, eltN, postOp);
   }
   __device__ __forceinline__ void directRecvReduceDirectSend(intptr_t inpIx, intptr_t outIx, ssize_t eltN, bool postOp=false) {
-    genericOp<1, 1, 1, 1, Input, -1, 0>(inpIx, outIx, eltN, postOp);
+    genericOp<1, 1, 1, 1, Input, -1, 1>(inpIx, outIx, eltN, postOp);
   }
 
   __device__ __forceinline__ void recvReduceCopySend(intptr_t inpIx, intptr_t outIx, int eltN, bool postOp=false) {
