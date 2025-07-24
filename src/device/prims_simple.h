@@ -199,12 +199,18 @@ private:
 
   template<int Recv, int Send>
   inline __device__ void postPeer(bool dataStored) {
-    if (Send && (flags & RolePostSend) && dataStored)
+    if (Send && (flags & RolePostSend) && dataStored){
 #ifdef __GFX9__
-    __threadfence();
+      //Current implementation
+      //asm volatile("s_waitcnt lgkmcnt(0) vmcnt(0)" ::: "memory");
+      //asm volatile("buffer_inv sc0 sc1"); // Only needs to be sc1, but reviewers wanted it be both.
+      // Cheaper Fence
+      asm volatile("s_waitcnt lgkmcnt(0) vmcnt(0)" ::: "memory");
+      __atomic_signal_fence(__ATOMIC_SEQ_CST);
 #else
     __threadfence_system();
 #endif
+    }
 
     if ((flags & Send*RolePostSend) && next_hdp_reg)
       STORE((unsigned int *)next_hdp_reg, 0x1);
