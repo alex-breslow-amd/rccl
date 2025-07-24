@@ -23,6 +23,8 @@ THE SOFTWARE.
 #define RCCL_COMMON_H_
 #include "nccl_common.h"
 #include "nccl.h"
+#include "param.h"
+
 typedef enum RcclTunableColls {
   RCCL_UNSUPPORTED_TUNABLE = -1,
   RCCL_RS_TUNABLE = 0,    // reduce_scatter index
@@ -33,10 +35,11 @@ typedef enum RcclTunableColls {
 } rcclTunableIndex_t;
 
 #define RCCL_LL_LIMITS_UNDEFINED 0
-#define RCCL_PROTOCOL_ENTRY_SIZE 3
+#define RCCL_PROTOCOL_ENTRY_SIZE 4
 #define RCCL_PROTOCOL_MIN_IDX 0
 #define RCCL_PROTOCOL_MAX_IDX 1
 #define RCCL_PROTOCOL_FACTOR_IDX 2
+#define RCCL_PROTOCOL_THREAD_THRESHOLD_IDX 3
 
 #ifdef RCCL_EXPOSE_STATIC
 #define RCCL_STATIC_EXPOSE_CHECK()
@@ -71,11 +74,11 @@ inline size_t rcclGetSizePerRank(ncclFunc_t const& func, size_t const& nBytes, i
   return (func == ncclFuncReduceScatter || func == ncclFuncAllGather) ? nBytes / nRanks : nBytes;
 }
 void rcclUpdateCollectiveProtocol(struct ncclComm* comm, size_t const& nBytes, struct ncclTaskColl* info);
-
-
+void rcclUpdateThreadThreshold(struct ncclComm* comm, size_t const& nBytes, struct ncclTaskColl* info, int& threadThreshold);
 ncclResult_t rcclGetAlgoInfo(struct ncclComm* comm, ncclFunc_t coll, uint64_t count, ncclDataType_t dataType,
                              int collNetSupport, int nvlsSupport, int numPipeOps,
                              int* algo, int* protocol, int* maxChannels);
 
 ncclResult_t rcclFuncMaxSendRecvCount(ncclFunc_t func, int nRanks, size_t count, size_t& maxCount);
+ncclResult_t commSetUnrollFactor(struct ncclComm* comm);
 #endif

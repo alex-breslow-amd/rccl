@@ -67,7 +67,21 @@ union ncclLLFifoLine {
   int4 i4;
 };
 
-#define WARP_SIZE warpSize
+#if __HIP_DEVICE_COMPILE__
+  #if defined(__GFX9__)
+  #define WARP_SIZE 64
+  #else
+  #define WARP_SIZE 32
+  #endif
+#else
+ /* IMPORTANT:
+  * WARP_SIZE should NEVER be referenced by host code in RCCL. It is defined here
+  * solely as a workaround to allow RCCL to compile, since the host still compiles __device__ functions,
+  * and WARP_SIZE needs to be defined. These __device__ functions will not be called from the host.
+  * The host warp size is handled in src/enqueue.cc by calling hipDeviceGetAttributes(). */
+  #define WARP_SIZE 32
+#endif
+
 #define MAXCHANNELS 128
 #define CHANNEL_LIMIT 16
 #define NCCL_MAX_LOCAL_RANKS 72
@@ -95,7 +109,7 @@ static_assert(NCCL_LL_CLEAN_MASK % NCCL_STEPS == 0, "Invalid NCCL_LL_CLEAN_MASK 
 #define NCCL_LL128_MAX_NTHREADS 256
 #define NCCL_LL128_ELEMS_PER_THREAD 28
 
-#define NCCL_LL128_SHMEM_ELEMS_PER_THREAD 4
+#define NCCL_LL128_SHMEM_ELEMS_PER_THREAD 8
 #define NCCL_LL128_SHMEM_SIZE (NCCL_LL128_SHMEM_ELEMS_PER_THREAD*NCCL_LL128_MAX_NTHREADS)
 
 #define NCCL_P2P_WRITE 0x01
@@ -149,6 +163,7 @@ struct ncclProxyConnector {
 
 struct ncclConnector {
   int connected;
+  int hasSeen;
   struct ncclProxyConnector proxyConn;
   struct ncclTransportComm* transportComm;
   void* transportResources;
@@ -242,6 +257,8 @@ struct alignas(16) ncclDevWorkP2p {
   uint8_t sendNetReg:1, recvNetReg:1;
   uint8_t sendIpcReg:1, recvIpcReg:1;
 
+  uint8_t profilerEnabled:1;
+
   uint8_t sendConnIndex:2, recvConnIndex:2;
 };
 
@@ -263,7 +280,7 @@ inline __host__ uint8_t ncclP2pChannelBaseForRound(struct ncclComm* comm, int p2
 // ncclP2pChannelToPart and ncclP2pChannelForPart are inverses. The device code
 // uses ncclP2pChannelToPart to determine which part "this" channel is responsible for.
 inline __host__ int ncclP2pChannelForPart(int nP2pChannels, int base, int part, int nParts, int nNodes) {
-  if (nNodes > 1) {
+  if (nNodes > 2) {
     // Only works because nP2pChannels is pow2
     int nChannelsLog2 = countOneBits(nP2pChannels-1);
     int delta = reverseBits(part, nChannelsLog2);
@@ -273,7 +290,7 @@ inline __host__ int ncclP2pChannelForPart(int nP2pChannels, int base, int part, 
   }
 }
 inline __device__ int ncclP2pChannelToPart(int nP2pChannels, int base, int channel, int nParts, int nNodes) {
-  if (nNodes > 1) {
+  if (nNodes > 2) {
     // Only works because nP2pChannels is pow2
     int nChannelsLog2 = countOneBits(nP2pChannels-1);
     int delta = (channel-base) & (nP2pChannels-1);
@@ -288,9 +305,9 @@ struct alignas(16) ncclDevWorkColl {
   //   nChannels == (channelHi - channelLo) + 1
   uint32_t channelLo:8, channelHi:8;
   uint32_t nWarps:8;
-  uint32_t redOpArgIsPtr:1, regUsed:1, netRegUsed:1, oneNode:1, direct:2, isOneRPN:1;
+  uint32_t redOpArgIsPtr:1, regUsed:1, netRegUsed:1, oneNode:1, direct:2, isOneRPN:1, rcclUseOneSlice:1;
   uint32_t root:30, connIndex:2;
-  uint16_t pivotA2ANumBiRings;
+  uint16_t pivotA2ANumBiRings:15, profilerEnabled:1;
   void* recvbuff;
   void* sendbuff;
   uintptr_t sendbuffOffset;
@@ -316,7 +333,7 @@ struct alignas(16) ncclDevWorkColl {
 };
 
 
-__host__ __device__ constexpr int ncclProtoGrainSize(int proto) {
+__device__ constexpr int ncclProtoGrainSize(int proto) {
   return proto == NCCL_PROTO_LL ? 16 :
         proto == NCCL_PROTO_LL128 ? WARP_SIZE*NCCL_LL128_SHMEM_ELEMS_PER_THREAD/NCCL_LL128_LINEELEMS*NCCL_LL128_DATAELEMS*sizeof(uint64_t) :
         proto == NCCL_PROTO_SIMPLE ? 512 :
@@ -324,7 +341,7 @@ __host__ __device__ constexpr int ncclProtoGrainSize(int proto) {
 }
 
 template<typename Int>
-__host__ __device__ inline void ncclCollCbdPart(
+__device__ inline void ncclCollCbdPart(
     struct ncclDevWorkColl* work, uint32_t channelId, int proto, int eltSize,
     Int* count, Int* partOffset, Int* partCount, Int* chunkCount
   ) {
@@ -484,6 +501,7 @@ struct alignas(16) ncclDevChannel {
   struct ncclTree binTree;
   struct ncclNvls nvls;
   uint32_t* workFifoDone; // Location of done counter, device writes index+1 of last work processed
+  uint64_t workCounter;
 };
 
 struct ncclDevComm {
@@ -508,6 +526,10 @@ struct ncclDevComm {
   struct ncclDevChannel* channels/*[MAXCHANNELS]*/;
 
   int* rankToLocalRank;
+
+  // Profiler counters
+  uint64_t* workStarted/*[MAXCHANNELS]*/;
+  uint64_t* workCompleted/*[MAXCHANNELS]*/;
 
 #if defined(ENABLE_NPKIT)
   NpKitEventCollectContext* npKitEventCollectContexts;
@@ -607,7 +629,7 @@ __host__ __device__ constexpr int ncclCalcUnroll(int bytePerPack, int insns, int
 
 __host__ __device__ constexpr int ncclCollUnroll(int cudaArch = NCCL_CUDA_ARCH) {
   // Our collective unroll should move to the same bytes&insns model as NVLS.
-  return cudaArch >= 800 ? 8 : 4;
+  return cudaArch >= 800 ? (cudaArch == 1200 ? 6 : 8) : 4;
 }
 
 __host__ __device__ constexpr int ncclNvlsUnrollBytes(int cudaArch = NCCL_CUDA_ARCH) { return 4*16; }
@@ -618,7 +640,7 @@ __host__ __device__ constexpr int ncclNvlsUnroll(int bytePerPack, int cudaArch =
 }
 
 // The amount of dynamic shmem per warp
-__host__ __device__ constexpr int ncclShmemScratchWarpSize(int cudaArch = NCCL_CUDA_ARCH) {
+__device__ constexpr int ncclShmemScratchWarpSize(int cudaArch = NCCL_CUDA_ARCH) {
   return (max_constexpr<int>(
       /*LL    */0,
       /*LL128 */(NCCL_LL128_SHMEM_ELEMS_PER_THREAD*WARP_SIZE)*sizeof(uint64_t),
@@ -629,7 +651,7 @@ __host__ __device__ constexpr int ncclShmemScratchWarpSize(int cudaArch = NCCL_C
 }
 
 // The amount of dynamic shmem per block
-__host__ __device__ constexpr int ncclShmemDynamicSize(int cudaArch = NCCL_CUDA_ARCH) {
+__device__ constexpr int ncclShmemDynamicSize(int cudaArch = NCCL_CUDA_ARCH) {
   return cudaArch < 700 ? 0 : ncclShmemScratchWarpSize(cudaArch)*(NCCL_MAX_NTHREADS/WARP_SIZE);
 }
 
@@ -671,48 +693,61 @@ extern int const ncclDevFuncRowToId[];
 inline int ncclDevFuncId(int coll, int devRedOp, int type, int algo, int proto) {
   int row = 0;
   do {
-    // RING / <all_protos> / Sum / int8_t
+    // RING/PAT | <all_protos> | Sum | int8_t
+    int nAlgos = 2;
     if (coll == ncclFuncAllGather) {
-      row += proto;
+      int algo1 = algo == NCCL_ALGO_RING ? 0 :
+                /*algo == NCCL_ALGO_PAT*/ 1;
+      row += algo1 * NCCL_NUM_PROTOCOLS + proto;
       break;
     }
-    row += NCCL_NUM_PROTOCOLS;
+    row += nAlgos * NCCL_NUM_PROTOCOLS;
 
-    // <all_algos> / <all_protos> / <all_redops> / <all_types>
+    // RING/TREE | <all_protos> | <all_redops> | <all_types>
+    nAlgos = 2;
     if (coll == ncclFuncAllReduce) {
-      row += (((algo * NCCL_NUM_PROTOCOLS + proto) * ncclNumDevRedOps + devRedOp) * ncclNumTypes + type) - NCCL_NUM_FLOATS * (algo * NCCL_NUM_PROTOCOLS + proto);
+      int algo1 = algo == NCCL_ALGO_TREE ? 0 :
+                /*algo == NCCL_ALGO_RING*/ 1;
+      row += (((algo1 * NCCL_NUM_PROTOCOLS + proto) * ncclNumDevRedOps + devRedOp) * ncclNumTypes + type) - NCCL_NUM_FLOATS * (algo1 * NCCL_NUM_PROTOCOLS + proto);
       break;
     }
-    row += (NCCL_NUM_ALGORITHMS - 5) * NCCL_NUM_PROTOCOLS * (ncclNumDevRedOps * ncclNumTypes - NCCL_NUM_FLOATS);
+    row += nAlgos * NCCL_NUM_PROTOCOLS * (ncclNumDevRedOps * ncclNumTypes - NCCL_NUM_FLOATS);
 
-    // RING / SIMPLE / Sum / int8_t
+    // RING | SIMPLE | Sum | int8_t
+    nAlgos = 1;
     if (coll == ncclFuncAllToAllPivot) break;
-    row += 1;
+    row += nAlgos * 1;
 
-    // RING / <all_protos> / Sum / int8_t
+    // RING | <all_protos> | Sum | int8_t
+    nAlgos = 1;
     if (coll == ncclFuncBroadcast) {
       row += proto;
       break;
     }
-    row += NCCL_NUM_PROTOCOLS;
+    row += nAlgos * NCCL_NUM_PROTOCOLS;
 
-    // RING / <all_protos> / <all_redops> / <all_types>
+    // RING | <all_protos> | <all_redops> | <all_types>
+    nAlgos = 1;
     if (coll == ncclFuncReduce) {
       row += ((proto * ncclNumDevRedOps + devRedOp) * ncclNumTypes + type) - NCCL_NUM_FLOATS * proto; 
       break;
     }
-    row += NCCL_NUM_PROTOCOLS * (ncclNumDevRedOps * ncclNumTypes - NCCL_NUM_FLOATS);
+    row += nAlgos * NCCL_NUM_PROTOCOLS * (ncclNumDevRedOps * ncclNumTypes - NCCL_NUM_FLOATS);
 
-    // RING / <all_protos> / <all_redops> / <all_types>
+    // RING/PAT | <all_protos> | <all_redops> | <all_types>
+    nAlgos = 2;
     if (coll == ncclFuncReduceScatter) {
-      row += ((proto * ncclNumDevRedOps + devRedOp) * ncclNumTypes + type) - NCCL_NUM_FLOATS * proto;
+      int algo1 = algo == NCCL_ALGO_RING ? 0 :
+                /*algo == NCCL_ALGO_PAT*/ 1;
+      row += (((algo1 * NCCL_NUM_PROTOCOLS + proto) * ncclNumDevRedOps + devRedOp) * ncclNumTypes + type) - NCCL_NUM_FLOATS * (algo1 * NCCL_NUM_PROTOCOLS + proto);
       break;
     }
     row += NCCL_NUM_PROTOCOLS * (ncclNumDevRedOps * ncclNumTypes - NCCL_NUM_FLOATS);
 
-    // RING / SIMPLE / Sum / int8_t
+    // RING | SIMPLE | Sum | int8_t
+    nAlgos = 1;
     if (coll == ncclFuncSendRecv) break;
-    row += 1;
+    row += nAlgos * 1;
 
   } while (false);
 

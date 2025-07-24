@@ -19,6 +19,7 @@ build_tests=false
 build_verbose=false
 clean_build=true
 collective_trace=true
+enable_code_coverage=false
 enable_ninja=""
 install_dependencies=false
 install_library=false
@@ -44,6 +45,7 @@ function display_help()
     echo "RCCL build & installation helper script"
     echo " Options:"
     echo "       --address-sanitizer     Build with address sanitizer enabled"
+    echo "    -c|--enable-code-coverage  Enable Code Coverage"
     echo "    -d|--dependencies          Install RCCL dependencies"
     echo "       --debug                 Build debug library"
     echo "       --enable_backtrace      Build with custom backtrace support"
@@ -64,7 +66,6 @@ function display_help()
     echo "       --openmp-test-enable    Enable OpenMP in rccl unit tests"
     echo "    -p|--package_build         Build RCCL package"
     echo "       --prefix                Specify custom directory to install RCCL to (default: \`/opt/rocm\`)"
-    echo "       --rm-legacy-include-dir Remove legacy include dir Packaging added for file/folder reorg backward compatibility"
     echo "       --run_tests_all         Run all rccl unit tests (must be built already)"
     echo "    -r|--run_tests_quick       Run small subset of rccl unit tests (must be built already)"
     echo "       --save-temps            Save intermediate compilation files from GPU compilation (useful for debugging)"
@@ -81,7 +82,7 @@ function display_help()
 # check if we have a modern version of getopt that can handle whitespace and long parameters
 getopt -T
 if [[ "$?" -eq 4 ]]; then
-    GETOPT_PARSE=$(getopt --name "${0}" --options dfhij:lprt --longoptions address-sanitizer,dependencies,debug,enable_backtrace,disable-colltrace,disable-msccl-kernel,disable-mscclpp,enable-mscclpp-clip,fast,help,install,jobs:,local_gpu_only,amdgpu_targets:,no_clean,npkit-enable,log-trace,openmp-test-enable,roctx-enable,package_build,prefix:,rm-legacy-include-dir,run_tests_all,run_tests_quick,save-temps,static,tests_build,time-trace,verbose -- "$@")
+    GETOPT_PARSE=$(getopt --name "${0}" --options cdfhij:lprt --longoptions address-sanitizer,dependencies,debug,enable-code-coverage,enable_backtrace,disable-colltrace,disable-msccl-kernel,disable-mscclpp,fast,help,install,jobs:,local_gpu_only,amdgpu_targets:,no_clean,npkit-enable,log-trace,openmp-test-enable,roctx-enable,package_build,prefix:,rm-legacy-include-dir,run_tests_all,run_tests_quick,save-temps,static,tests_build,time-trace,verbose -- "$@")
 else
     echo "Need a new version of getopt"
     exit 1
@@ -97,6 +98,7 @@ eval set -- "${GETOPT_PARSE}"
 while true; do
     case "${1}" in
          --address-sanitizer)        build_address_sanitizer=true;                                                                     shift ;;
+    -c | --enable-code-coverage)     enable_code_coverage=true;                                                                        shift ;;
     -d | --dependencies)             install_dependencies=true;                                                                        shift ;;
          --debug)                    build_release=false;                                                                              shift ;;
          --enable_backtrace)         build_bfd=true;                                                                                   shift ;;
@@ -117,7 +119,6 @@ while true; do
          --openmp-test-enable)       openmp_test_enabled=true;                                                                         shift ;;
     -p | --package_build)            build_package=true;                                                                               shift ;;
          --prefix)                   install_library=true; install_prefix=${2};                                                        shift 2 ;;
-         --rm-legacy-include-dir)    build_freorg_bkwdcomp=false;                                                                      shift ;;
     -r | --run_tests_quick)          run_tests=true;                                                                                   shift ;;
          --run_tests_all)            run_tests=true; run_tests_all=true;                                                               shift ;;
          --save-temps)               save_temps=true;                                                                                  shift ;;
@@ -211,14 +212,14 @@ if [[ "${build_address_sanitizer}" == true ]]; then
     cmake_common_options="${cmake_common_options} -DBUILD_ADDRESS_SANITIZER=ON"
 fi
 
+# Enable code coverage
+if [[ "${enable_code_coverage}" == true ]]; then
+    cmake_common_options="${cmake_common_options} -DENABLE_CODE_COVERAGE=ON"
+fi
+
 # Backtrace support
 if [[ "${build_bfd}" == true ]]; then
     cmake_common_options="${cmake_common_options} -DBUILD_BFD=ON"
-fi
-
-# Backward compatibility wrappers
-if [[ "${build_freorg_bkwdcomp}" == true ]]; then
-    cmake_common_options="${cmake_common_options} -DBUILD_FILE_REORG_BACKWARD_COMPATIBILITY=ON"
 fi
 
 # Build local GPU arch only
@@ -285,122 +286,8 @@ if [[ "${openmp_test_enabled}" == true ]]; then
 fi
 
 # Enable NPKit
-npkit_options=""
 if [[ "${npkit_enabled}" == true ]]; then
-    npkit_options="-DENABLE_NPKIT \
-    -DENABLE_NPKIT_EVENT_TIME_SYNC_GPU \
-    -DENABLE_NPKIT_EVENT_TIME_SYNC_CPU \
-    -DENABLE_NPKIT_EVENT_ALL_REDUCE_RING_ENTRY \
-    -DENABLE_NPKIT_EVENT_ALL_REDUCE_RING_EXIT \
-    -DENABLE_NPKIT_EVENT_ALL_REDUCE_TREE_UPDOWN_ENTRY \
-    -DENABLE_NPKIT_EVENT_ALL_REDUCE_TREE_UPDOWN_EXIT \
-    -DENABLE_NPKIT_EVENT_ALL_REDUCE_TREE_SPLIT_ENTRY \
-    -DENABLE_NPKIT_EVENT_ALL_REDUCE_TREE_SPLIT_EXIT \
-    -DENABLE_NPKIT_EVENT_COPY_SEND_ENTRY \
-    -DENABLE_NPKIT_EVENT_COPY_SEND_EXIT \
-    -DENABLE_NPKIT_EVENT_DIRECT_COPY_SEND_ENTRY \
-    -DENABLE_NPKIT_EVENT_DIRECT_COPY_SEND_EXIT \
-    -DENABLE_NPKIT_EVENT_DIRECT_RECV_ENTRY \
-    -DENABLE_NPKIT_EVENT_DIRECT_RECV_EXIT \
-    -DENABLE_NPKIT_EVENT_DIRECT_RECV_COPY_SEND_ENTRY \
-    -DENABLE_NPKIT_EVENT_DIRECT_RECV_COPY_SEND_EXIT \
-    -DENABLE_NPKIT_EVENT_DIRECT_RECV_REDUCE_COPY_SEND_ENTRY \
-    -DENABLE_NPKIT_EVENT_DIRECT_RECV_REDUCE_COPY_SEND_EXIT \
-    -DENABLE_NPKIT_EVENT_DIRECT_SEND_ENTRY \
-    -DENABLE_NPKIT_EVENT_DIRECT_SEND_EXIT \
-    -DENABLE_NPKIT_EVENT_DIRECT_SEND_FROM_OUTPUT_ENTRY \
-    -DENABLE_NPKIT_EVENT_DIRECT_SEND_FROM_OUTPUT_EXIT \
-    -DENABLE_NPKIT_EVENT_RECV_ENTRY \
-    -DENABLE_NPKIT_EVENT_RECV_EXIT \
-    -DENABLE_NPKIT_EVENT_RECV_COPY_SEND_ENTRY \
-    -DENABLE_NPKIT_EVENT_RECV_COPY_SEND_EXIT \
-    -DENABLE_NPKIT_EVENT_RECV_REDUCE_COPY_ENTRY \
-    -DENABLE_NPKIT_EVENT_RECV_REDUCE_COPY_EXIT \
-    -DENABLE_NPKIT_EVENT_RECV_REDUCE_COPY_SEND_ENTRY \
-    -DENABLE_NPKIT_EVENT_RECV_REDUCE_COPY_SEND_EXIT \
-    -DENABLE_NPKIT_EVENT_RECV_REDUCE_SEND_ENTRY \
-    -DENABLE_NPKIT_EVENT_RECV_REDUCE_SEND_EXIT \
-    -DENABLE_NPKIT_EVENT_SEND_ENTRY \
-    -DENABLE_NPKIT_EVENT_SEND_EXIT \
-    -DENABLE_NPKIT_EVENT_SEND_FROM_OUTPUT_ENTRY \
-    -DENABLE_NPKIT_EVENT_SEND_FROM_OUTPUT_EXIT \
-    -DENABLE_NPKIT_EVENT_PRIM_SIMPLE_WAIT_PEER_ENTRY \
-    -DENABLE_NPKIT_EVENT_PRIM_SIMPLE_WAIT_PEER_EXIT \
-    -DENABLE_NPKIT_EVENT_PRIM_SIMPLE_REDUCE_OR_COPY_MULTI_ENTRY \
-    -DENABLE_NPKIT_EVENT_PRIM_SIMPLE_REDUCE_OR_COPY_MULTI_EXIT \
-    -DENABLE_NPKIT_EVENT_PRIM_LL_WAIT_SEND_ENTRY \
-    -DENABLE_NPKIT_EVENT_PRIM_LL_WAIT_SEND_EXIT \
-    -DENABLE_NPKIT_EVENT_PRIM_LL_DATA_PROCESS_ENTRY \
-    -DENABLE_NPKIT_EVENT_PRIM_LL_DATA_PROCESS_EXIT \
-    -DENABLE_NPKIT_EVENT_PRIM_LL128_WAIT_SEND_ENTRY \
-    -DENABLE_NPKIT_EVENT_PRIM_LL128_WAIT_SEND_EXIT \
-    -DENABLE_NPKIT_EVENT_PRIM_LL128_DATA_PROCESS_ENTRY \
-    -DENABLE_NPKIT_EVENT_PRIM_LL128_DATA_PROCESS_EXIT \
-    -DENABLE_NPKIT_EVENT_NET_SEND_ENTRY \
-    -DENABLE_NPKIT_EVENT_NET_SEND_EXIT \
-    -DENABLE_NPKIT_EVENT_NET_TEST_ENTRY \
-    -DENABLE_NPKIT_EVENT_NET_TEST_EXIT \
-    -DENABLE_NPKIT_EVENT_NET_RECV_ENTRY \
-    -DENABLE_NPKIT_EVENT_NET_RECV_EXIT \
-    -DENABLE_NPKIT_EVENT_ALL_REDUCE_RING_SEND_ENTRY \
-    -DENABLE_NPKIT_EVENT_ALL_REDUCE_RING_SEND_EXIT \
-    -DENABLE_NPKIT_EVENT_ALL_REDUCE_RING_RECV_REDUCE_SEND_ENTRY \
-    -DENABLE_NPKIT_EVENT_ALL_REDUCE_RING_RECV_REDUCE_SEND_EXIT \
-    -DENABLE_NPKIT_EVENT_ALL_REDUCE_RING_DIRECT_RECV_REDUCE_COPY_SEND_ENTRY \
-    -DENABLE_NPKIT_EVENT_ALL_REDUCE_RING_DIRECT_RECV_REDUCE_COPY_SEND_EXIT \
-    -DENABLE_NPKIT_EVENT_ALL_REDUCE_RING_DIRECT_RECV_COPY_SEND_ENTRY \
-    -DENABLE_NPKIT_EVENT_ALL_REDUCE_RING_DIRECT_RECV_COPY_SEND_EXIT \
-    -DENABLE_NPKIT_EVENT_ALL_REDUCE_RING_DIRECT_RECV_ENTRY \
-    -DENABLE_NPKIT_EVENT_ALL_REDUCE_RING_DIRECT_RECV_EXIT \
-    -DENABLE_NPKIT_EVENT_ALL_REDUCE_TREE_UPDOWN_REDUCE_ENTRY \
-    -DENABLE_NPKIT_EVENT_ALL_REDUCE_TREE_UPDOWN_REDUCE_EXIT \
-    -DENABLE_NPKIT_EVENT_ALL_REDUCE_TREE_UPDOWN_BROADCAST_ENTRY \
-    -DENABLE_NPKIT_EVENT_ALL_REDUCE_TREE_UPDOWN_BROADCAST_EXIT \
-    -DENABLE_NPKIT_EVENT_ALL_REDUCE_TREE_SPLIT_REDUCE_BROADCAST_ENTRY \
-    -DENABLE_NPKIT_EVENT_ALL_REDUCE_TREE_SPLIT_REDUCE_BROADCAST_EXIT \
-    -DENABLE_NPKIT_EVENT_ALL_REDUCE_TREE_SPLIT_REDUCE_ENTRY \
-    -DENABLE_NPKIT_EVENT_ALL_REDUCE_TREE_SPLIT_REDUCE_EXIT \
-    -DENABLE_NPKIT_EVENT_ALL_REDUCE_TREE_SPLIT_BROADCAST_ENTRY \
-    -DENABLE_NPKIT_EVENT_ALL_REDUCE_TREE_SPLIT_BROADCAST_EXIT \
-    -DENABLE_NPKIT_EVENT_SEND_RECV_LOCAL_COPY_ENTRY \
-    -DENABLE_NPKIT_EVENT_SEND_RECV_LOCAL_COPY_EXIT \
-    -DENABLE_NPKIT_EVENT_SEND_RECV_SEND_ENTRY \
-    -DENABLE_NPKIT_EVENT_SEND_RECV_SEND_EXIT \
-    -DENABLE_NPKIT_EVENT_SEND_RECV_RECV_ENTRY \
-    -DENABLE_NPKIT_EVENT_SEND_RECV_RECV_EXIT \
-    -DENABLE_NPKIT_EVENT_ALL_GATHER_RING_ENTRY \
-    -DENABLE_NPKIT_EVENT_ALL_GATHER_RING_EXIT \
-    -DENABLE_NPKIT_EVENT_ALL_GATHER_RING_SEND_ENTRY \
-    -DENABLE_NPKIT_EVENT_ALL_GATHER_RING_SEND_EXIT \
-    -DENABLE_NPKIT_EVENT_ALL_GATHER_RING_RECV_COPY_SEND_ENTRY \
-    -DENABLE_NPKIT_EVENT_ALL_GATHER_RING_RECV_COPY_SEND_EXIT \
-    -DENABLE_NPKIT_EVENT_ALL_GATHER_RING_DIRECT_RECV_ENTRY \
-    -DENABLE_NPKIT_EVENT_ALL_GATHER_RING_DIRECT_RECV_EXIT \
-    -DENABLE_NPKIT_EVENT_MSCCL_GENERIC_OP_ENTRY \
-    -DENABLE_NPKIT_EVENT_MSCCL_GENERIC_OP_EXIT \
-    -DENABLE_NPKIT_EVENT_MSCCL_REDUCE_ENTRY \
-    -DENABLE_NPKIT_EVENT_MSCCL_REDUCE_EXIT \
-    -DENABLE_NPKIT_EVENT_MSCCL_SEND_ENTRY \
-    -DENABLE_NPKIT_EVENT_MSCCL_SEND_EXIT \
-    -DENABLE_NPKIT_EVENT_MSCCL_RECV_ENTRY \
-    -DENABLE_NPKIT_EVENT_MSCCL_RECV_EXIT \
-    -DENABLE_NPKIT_EVENT_MSCCL_RUN_ENTRY \
-    -DENABLE_NPKIT_EVENT_MSCCL_RUN_EXIT \
-    -DENABLE_NPKIT_EVENT_MSCCL_RECV_REDUCE_COPY_ENTRY \
-    -DENABLE_NPKIT_EVENT_MSCCL_RECV_REDUCE_COPY_EXIT \
-    -DENABLE_NPKIT_EVENT_MSCCL_INIT_ENTRY \
-    -DENABLE_NPKIT_EVENT_MSCCL_INIT_EXIT \
-    -DENABLE_NPKIT_EVENT_BROADCAST_RING_ENTRY \
-    -DENABLE_NPKIT_EVENT_BROADCAST_RING_EXIT \
-    -DENABLE_NPKIT_EVENT_REDUCE_SCATTER_RING_ENTRY \
-    -DENABLE_NPKIT_EVENT_REDUCE_SCATTER_RING_EXIT \
-    -DENABLE_NPKIT_EVENT_REDUCE_SCATTER_RING_SEND_ENTRY \
-    -DENABLE_NPKIT_EVENT_REDUCE_SCATTER_RING_SEND_EXIT \
-    -DENABLE_NPKIT_EVENT_REDUCE_SCATTER_RING_RECV_REDUCE_SEND_ENTRY \
-    -DENABLE_NPKIT_EVENT_REDUCE_SCATTER_RING_RECV_REDUCE_SEND_EXIT \
-    -DENABLE_NPKIT_EVENT_REDUCE_SCATTER_RING_RECV_REDUCE_COPY_ENTRY \
-    -DENABLE_NPKIT_EVENT_REDUCE_SCATTER_RING_RECV_REDUCE_COPY_EXIT \
-    -DENABLE_NPKIT_PRIM_COLLECT_DATA_PROCESS_TIME"
+    cmake_common_options="${cmake_common_options} -DENABLE_NPKIT=ON"
 fi
 
 check_exit_code "$?"
@@ -427,9 +314,9 @@ if [[ "${build_tests}" == true ]] || ([[ "${run_tests}" == true ]] && [[ ! -x ./
 fi
 
 # Initiate RCCL CMake
-# Passing NPKIT_FLAGS separately (not as part of ${cmake_common_options}) as
-# ${npkit_options} need to be passed "as-is" i.e. with `-D` to CMakeLists.txt
-${cmake_executable} ${cmake_common_options} -DNPKIT_FLAGS="${npkit_options}" -DONLY_FUNCS="${ONLY_FUNCS}" ../../.
+# Passing ONLY_FUNCS separately (not as part of ${cmake_common_options}) as
+# ${ONLY_FUNCS} is a debug-only feature
+${cmake_executable} ${cmake_common_options} -DONLY_FUNCS="${ONLY_FUNCS}" ../../.
 check_exit_code "$?"
 
 # Enable verbose output from Makefile

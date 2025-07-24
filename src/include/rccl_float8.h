@@ -24,8 +24,9 @@
 #define ROCBLAS_FLOAT8_H
 
 #include <stdint.h>
+#include <hip/hip_version.h>
 
-#if __cplusplus < 201103L || (!defined(__HCC__) && !defined(__HIPCC__))
+#if __cplusplus < 201103L || (!defined(__HIP_PLATFORM_AMD__) && !defined(__HIPCC__))
 /*! \brief Struct to represent a 8 bit floating-point number. */
 
 typedef struct
@@ -38,7 +39,22 @@ typedef struct
     uint8_t data;
 } rccl_bfloat8;
 
-#else // __cplusplus < 201103L || (!defined(__HCC__) && !defined(__HIPCC__))
+// __cplusplus < 201103L || (!defined(__HIP_PLATFORM_AMD__) && !defined(__HIPCC__))
+#elif HIP_VERSION >= 60300000 && !(defined(__gfx1100__) || defined(__gfx1101__) || defined(__gfx1102__) || defined(__gfx1030__))
+
+#include <hip/hip_fp8.h>
+
+#if __HIP_DEVICE_COMPILE__ && (defined(__gfx942__))
+typedef __hip_fp8_e4m3_fnuz rccl_float8;
+typedef __hip_fp8_e5m2_fnuz rccl_bfloat8;
+#else
+typedef __hip_fp8_e4m3 rccl_float8;
+typedef __hip_fp8_e5m2 rccl_bfloat8;
+#endif
+
+// For older versions of ROCm that do not include hip_fp8.h,
+// we provide a local version of the header file as a fallback.
+#else
 
 #define HIP_HOST_DEVICE __host__ __device__
 #define HIP_HOST __host__
@@ -344,6 +360,8 @@ struct rccl_float8
     // default constructor
     HIP_HOST_DEVICE rccl_float8() = default;
 
+    constexpr inline HIP_HOST_DEVICE rccl_float8(const rccl_float8& a) : data(a.data) {}
+
 #if defined(__gfx942__) || defined(__gfx950__)
     // device specific optimized F8 down-conversion code
 
@@ -492,7 +510,7 @@ struct rccl_float8
     }
 
     // assignment overloading only from the same F8 types
-    inline __host__ __device__ rccl_float8& operator=(const rccl_float8& a)
+    inline HIP_HOST_DEVICE rccl_float8& operator=(const rccl_float8& a)
     {
         data = a.data;
         return *this;
@@ -510,6 +528,8 @@ struct rccl_bfloat8
 
     // default constructor
     HIP_HOST_DEVICE rccl_bfloat8() = default;
+
+    constexpr inline HIP_HOST_DEVICE rccl_bfloat8(const rccl_bfloat8& a) : data(a.data) {}
 
 #if defined(__gfx942__) || defined(__gfx950__)
     // device specific optimized F8 down-conversion code
@@ -659,7 +679,7 @@ struct rccl_bfloat8
     }
 
     // assignment overloading only from the same F8 types
-    inline __host__ __device__ rccl_bfloat8& operator=(const rccl_bfloat8& a)
+    inline HIP_HOST_DEVICE rccl_bfloat8& operator=(const rccl_bfloat8& a)
     {
         data = a.data;
         return *this;
@@ -684,11 +704,11 @@ namespace std
     {
         return rccl_bfloat8(cosf(float(a)));
     }
-    __device__ __host__ constexpr rccl_float8 real(const rccl_float8& a)
+    HIP_HOST_DEVICE constexpr rccl_float8 real(const rccl_float8& a)
     {
         return a;
     }
-    __device__ __host__ constexpr rccl_bfloat8 real(const rccl_bfloat8& a)
+    HIP_HOST_DEVICE constexpr rccl_bfloat8 real(const rccl_bfloat8& a)
     {
         return a;
     }
@@ -1016,6 +1036,6 @@ inline __host__ __device__ T explicit_downcast(Ta a, uint32_t rng)
 
 // =================================================================================================
 
-#endif // __cplusplus < 201103L || (!defined(__HCC__) && !defined(__HIPCC__))
+#endif
 
 #endif // ROCBLAS_FLOAT8_H
