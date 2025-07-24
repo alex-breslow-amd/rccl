@@ -1043,7 +1043,8 @@ if (HAVE_KERNARG_PRELOAD)
 endif()
 if (SAVE_TEMPS) # Save temporary files from kernel compilation
   message(STATUS "Saving temporary files from kernel compilation")
-  target_compile_options(rccl PRIVATE --save-temps)
+  target_compile_options(rccl PRIVATE -v --save-temps)
+  target_link_options(rccl PRIVATE -v --save-temps)
 endif()
 
 ## NOTE: This is currently being handled by rocm-cmake, however may need to be re-enabled in the future
