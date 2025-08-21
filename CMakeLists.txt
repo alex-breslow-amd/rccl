@@ -1037,6 +1037,8 @@ if(ENABLE_NPKIT)
   target_compile_definitions(rccl PRIVATE ENABLE_NPKIT_PRIM_COLLECT_DATA_PROCESS_TIME)
 endif()
 
+target_compile_definitions(rccl PRIVATE RCCL_STORE_BITS="sc0 sc1")
+
 if(PROFILE)
   target_compile_definitions(rccl PRIVATE ENABLE_PROFILING)
 endif()
