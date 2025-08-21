@@ -31,9 +31,9 @@ using RCCLVecU64_2 = uint64_t __attribute__((ext_vector_type(2)));
 #define RCCL_STORE_BITS "sc0 sc1"
 #endif 
 
-#if (defined(__gfx942__) || defined(__gfx950)) && !defined(DISABLE_RCCL_ASM)
+#if (defined(__gfx942__) || defined(__gfx950__)) && !defined(DISABLE_RCCL_ASM)
 #define store_bytepack16_global(addr, value) \
-  asm volatile("global_store_dwordx4 %0, %1 off " RCCL_STORE_BITS :: "v"((rccl::RCCLVecU64_2*)(addr)), "v"((value.u64_vec2)))
+  asm volatile("global_store_dwordx4 %0 %1 off " RCCL_STORE_BITS :: "v"((rccl::RCCLVecU64_2*)(addr)), "v"((value.u64_vec2)))
 
 #define load_bytepack16_global(addr, ans) \
   ans.u64_vec2 = __builtin_nontemporal_load((rccl::RCCLVecU64_2*)(addr)) 
