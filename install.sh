@@ -84,7 +84,7 @@ function display_help()
 # check if we have a modern version of getopt that can handle whitespace and long parameters
 getopt -T
 if [[ "$?" -eq 4 ]]; then
-    GETOPT_PARSE=$(getopt --name "${0}" --options cdfhij:lprt --longoptions address-sanitizer,dependencies,debug,enable-code-coverage,enable_backtrace,disable-colltrace,disable-msccl-kernel,disable-mscclpp,fast,help,install,jobs:,local_gpu_only,amdgpu_targets:,no_clean,npkit-enable,log-trace,openmp-test-enable,roctx-enable,package_build,prefix:,rm-legacy-include-dir,run_tests_all,run_tests_quick,static,tests_build,time-trace,force-reduce-pipeline,rccl-store-bits:,verbose -- "$@")
+    GETOPT_PARSE=$(getopt --name "${0}" --options cdfhij:lprt --longoptions address-sanitizer,dependencies,debug,enable-code-coverage,enable_backtrace,disable-colltrace,disable-msccl-kernel,disable-mscclpp,fast,help,install,jobs:,local_gpu_only,amdgpu_targets:,no_clean,npkit-enable,log-trace,openmp-test-enable,roctx-enable,package_build,prefix:,rm-legacy-include-dir,run_tests_all,run_tests_quick,static,tests_build,time-trace,verbose,force-reduce-pipeline,rccl-store-bits: -- "$@")
 else
     echo "Need a new version of getopt"
     exit 1
@@ -128,7 +128,7 @@ while true; do
          --time-trace)               time_trace=true;                                                                                  shift ;;
          --verbose)                  build_verbose=true;                                                                               shift ;;
          --force-reduce-pipeline)    force_reduce_pipeline=true;                                                                        shift ;;
-         --rccl-store-bits)          rccl_store_bits=${2}                                                                              shift ;;
+         --rccl-store-bits)          rccl_store_bits=${2};                                                                             shift 2 ;;
     --) shift ; break ;;
     *)  echo "Unexpected command line parameter received; aborting";
         exit 1
@@ -322,7 +322,7 @@ cmake_common_options="${cmake_common_options} -DCMAKE_EXE_LINKER_FLAGS=\"-Wl,-rp
 # Initiate RCCL CMake
 # Passing ONLY_FUNCS separately (not as part of ${cmake_common_options}) as
 # ${ONLY_FUNCS} is a debug-only feature
-${cmake_executable} ${cmake_common_options} -DONLY_FUNCS="${ONLY_FUNCS}" ../../.
+${cmake_executable} ${cmake_common_options} -DONLY_FUNCS="${ONLY_FUNCS}" -DRCCL_STORE_BITS="${rccl_store_bits}" ../../.
 check_exit_code "$?"
 
 # Enable verbose output from Makefile

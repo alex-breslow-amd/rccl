@@ -1037,7 +1037,12 @@ if(ENABLE_NPKIT)
   target_compile_definitions(rccl PRIVATE ENABLE_NPKIT_PRIM_COLLECT_DATA_PROCESS_TIME)
 endif()
 
-target_compile_definitions(rccl PRIVATE RCCL_STORE_BITS="sc0 sc1")
+if(${RCCL_STORE_BITS} STREQUAL "no_override")
+message(STATUS "Not overriding store bits")
+else()
+message(STATUS "Overriding RCCL_STORE_BITS with ${RCCL_STORE_BITS}")
+target_compile_definitions(rccl PRIVATE RCCL_STORE_BITS=${RCCL_STORE_BITS})
+endif()
 
 if(PROFILE)
   target_compile_definitions(rccl PRIVATE ENABLE_PROFILING)
