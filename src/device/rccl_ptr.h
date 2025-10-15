@@ -1,6 +1,10 @@
 #pragma once
 
+#if defined(__gfx942__) || defined(__gfx950__)
 #define RCCL_HAVE_GLOBAL_DWORDX4_BUILTINS 1
+#else
+#define RCCL_HAVE_GLOBAL_DWORDX4_BUILTINS 0
+#endif
 
 typedef __attribute__((__vector_size__(4 * sizeof(unsigned int)))) unsigned int v4u;
 typedef __attribute__((address_space(1))) v4u* v4u_gptr;

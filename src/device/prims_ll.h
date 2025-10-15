@@ -268,11 +268,16 @@ private:
     i4.flag1 = flag;
     i4.data2 = (val >> 32);
     i4.flag2 = flag;
-#ifdef __builtin_amdgcn_global_store_b128
-    __builtin_amdgcn_global_store_b128((v4u_gtr)dst, i4.v4u, "");
+#ifdef RCCL_HAVE_GLOBAL_DWORDX4_BUILTINS
+    __builtin_amdgcn_global_store_b128((v4u_gptr)dst, i4.v4u, "");
     __atomic_signal_fence(__ATOMIC_SEQ_CST);
 #elif defined(__gfx950__) && ROCM_VERSION < 70200
+    __builtin_nontemporal_store(i4.v[0], dst->v);
+    __builtin_nontemporal_store(i4.v[1], dst->v+1);
     __builtin_amdgcn_fence(__ATOMIC_RELEASE, ""); // flush cache
+#else
+    __builtin_nontemporal_store(i4.v[0], dst->v);
+    __builtin_nontemporal_store(i4.v[1], dst->v+1);
 #endif
 #else
     asm volatile("st.volatile.global.v4.u32 [%0], {%1,%2,%3,%4};" :: "l"(&dst->i4), "r"((uint32_t)val), "r"(flag), "r"((uint32_t)(val >> 32)), "r"(flag) : "memory");
