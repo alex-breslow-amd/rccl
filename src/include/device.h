@@ -11,6 +11,7 @@
 
 #include "nccl.h"
 #include "rccl_float8.h"
+#include "device/rccl_ptr.h"
 #include <hip/hip_bfloat16.h>
 #include "nccl_common.h"
 #include "bitops.h"
@@ -93,6 +94,7 @@ union ncclLLFifoLine {
   };
   uint64_t v[2];
   int4 i4;
+  v4u v4u;
 };
 
 #if __HIP_DEVICE_COMPILE__

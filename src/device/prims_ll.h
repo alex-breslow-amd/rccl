@@ -10,6 +10,8 @@
 #include "npkit/npkit.h"
 #endif
 
+#include "device/rccl_ptr.h"
+
 template<typename T, typename RedOp, typename Fan, int Direct, int P2p, bool isNetOffload, int Metadata, int Pipeline, int useAcc>
 class Primitives<T, RedOp, Fan, Direct, ProtoLL, P2p, isNetOffload, Metadata, Pipeline, useAcc>:
     public PrimitivesWithoutDirect<Primitives<T, RedOp, Fan, Direct, ProtoLL, P2p, isNetOffload, Metadata, Pipeline, useAcc>> {
@@ -266,9 +268,10 @@ private:
     i4.flag1 = flag;
     i4.data2 = (val >> 32);
     i4.flag2 = flag;
-    __builtin_nontemporal_store(i4.v[0], dst->v);
-    __builtin_nontemporal_store(i4.v[1], dst->v+1);
-#if defined(__gfx950__) && ROCM_VERSION < 70200
+#ifdef __builtin_amdgcn_global_store_b128
+    __builtin_amdgcn_global_store_b128((v4u_gtr)dst, i4.v4u, "");
+    __atomic_signal_fence(__ATOMIC_SEQ_CST);
+#elif defined(__gfx950__) && ROCM_VERSION < 70200
     __builtin_amdgcn_fence(__ATOMIC_RELEASE, ""); // flush cache
 #endif
 #else

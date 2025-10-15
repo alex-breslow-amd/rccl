@@ -9,14 +9,30 @@
 
 #include <type_traits>
 
+#include "device/rccl_ptr.h"
+
 inline __device__ void load128(const uint64_t* ptr, uint64_t &v0, uint64_t &v1) {
+  #ifdef RCCL_HAVE_GLOBAL_DWORDX4_BUILTINS
+  RCCLPack16 bp;
+  bp.v4u = __builtin_amdgcn_global_load_b128((v4u_gptr)ptr, "");
+  v0 = bp.u64[0];
+  v1 = bp.u64[1];
+  #else
   v0 = __builtin_nontemporal_load(ptr);
   v1 = __builtin_nontemporal_load(ptr+1);
+  #endif
 }
 
 inline __device__ void store128(uint64_t* ptr, uint64_t v0, uint64_t v1) {
+  #ifdef RCCL_HAVE_GLOBAL_DWORDX4_BUILTINS
+  RCCLPack16 bp;
+  bp.u64[0] = v0;
+  bp.u64[1] = v1;
+  __builtin_amdgcn_global_store_b128((v4u_gptr) ptr, bp.v4u, "");
+  #else
   __builtin_nontemporal_store(v0, ptr);
   __builtin_nontemporal_store(v1, ptr+1);
+  #endif
 }
 
 inline __device__ uint64_t* shmemCvtPtr(volatile uint64_t* shmemGenericPtr) {
@@ -140,8 +156,6 @@ union BytePack<8> {
     return *this;
   }
 };
-typedef __attribute__((__vector_size__(4 * sizeof(unsigned int)))) unsigned int v4u;
-typedef __attribute__((address_space(1))) v4u* v4u_gptr;
 template<>
 union alignas(16) BytePack<16> {
   BytePack<8> half[2];
