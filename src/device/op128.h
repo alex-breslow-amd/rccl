@@ -140,6 +140,8 @@ union BytePack<8> {
     return *this;
   }
 };
+typedef __attribute__((__vector_size__(4 * sizeof(unsigned int)))) unsigned int v4u;
+typedef __attribute__((address_space(1))) v4u* v4u_gptr;
 template<>
 union alignas(16) BytePack<16> {
   BytePack<8> half[2];
@@ -152,6 +154,7 @@ union alignas(16) BytePack<16> {
   uint32_t u32[4];
   uint64_t u64[2];
   ulong2 ul2[1], native;
+  v4u v4u;
 #if !defined(USE_INDIRECT_FUNCTION_CALL) || defined(__gfx942__) || defined(__gfx950__)
   inline __device__ BytePack<16>() = default;
   inline __device__ BytePack<16>(const BytePack<16>& other) {
@@ -308,14 +311,12 @@ DEFINE_ld_st__size(8, uint64_t, b64, l)
   template<> \
   __device__ __forceinline__ BytePack<16> ld_volatile_##space<16>(addr_cxx_ty addr) { \
     BytePack<16> ans; \
-    ans.u64[0] = __builtin_nontemporal_load((uint64_t*)addr); \
-    ans.u64[1] = __builtin_nontemporal_load((uint64_t*)addr+1); \
+    ans.v4u = __builtin_amdgcn_global_load_b128((v4u_gptr) addr, ""); \
     return ans; \
   } \
   template<> \
   __device__ __forceinline__ void st_##space<16>(addr_cxx_ty addr, BytePack<16> value) { \
-    __builtin_nontemporal_store(value.u64[0], (uint64_t*)addr); \
-    __builtin_nontemporal_store(value.u64[1], (uint64_t*)addr+1); \
+    __builtin_amdgcn_global_store_b128((v4u_gptr) addr, value.v4u, ""); \
   }
 
 DEFINE_ld_st_16__space(global, uintptr_t, l)
